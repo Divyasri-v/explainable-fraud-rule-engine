@@ -35,5 +35,8 @@ export const api = {
   detail: (id) => request(`/transactions/${encodeURIComponent(id)}`),
   review: (id, body) => request(`/transactions/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify(body) }),
   clear: (id, body) => request(`/transactions/${encodeURIComponent(id)}/clear`, { method: "POST", body: JSON.stringify(body) }),
+  escalate: (id, body) => request(`/api/escalations/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(body) }),
+  escalations: () => request("/api/escalations"),
+  updateEscalationStatus: (id, body) => request(`/api/escalations/${encodeURIComponent(id)}/status`, { method: "PATCH", body: JSON.stringify(body) }),
   generateDemo: () => request("/demo/generate", { method: "POST" }),
 };

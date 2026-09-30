@@ -3,6 +3,7 @@ const CARDS = [
   { key: "flagged_transactions", label: "Flagged transactions" },
   { key: "high_risk", label: "High risk", tone: "high" },
   { key: "critical_risk", label: "Critical risk", tone: "critical" },
+  { key: "escalated_cases", label: "Escalated cases", tone: "critical" },
   { key: "cleared", label: "Cleared" },
   { key: "pending_review", label: "Pending review", tone: "pending" },
 ];

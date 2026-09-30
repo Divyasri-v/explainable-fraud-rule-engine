@@ -54,3 +54,34 @@ class NotificationService:
         db.add(record)
         db.commit()
         return record
+
+    def send_escalation_alert(self, db, txn: Transaction, escalation) -> NotificationLog:
+        subject = f"🚨 CRITICAL FRAUD ALERT / CYBER CRIME ESCALATION: {txn.transaction_id}"
+        rule_summary = "\n".join([f"- {f.rule_name} (+{f.risk_points})" for f in txn.flags]) or "None"
+        message = (
+            f"🚨 CRITICAL FRAUD ALERT\n\n"
+            f"Transaction requires immediate attention.\n\n"
+            f"Transaction ID: {txn.transaction_id}\n"
+            f"Customer: {txn.customer_id}\n"
+            f"Risk Score: {txn.risk_score}/100\n"
+            f"Risk Level: {txn.risk_level}\n\n"
+            f"Triggered Rules:\n{rule_summary}\n\n"
+            f"Escalated By: {escalation.escalated_by}\n"
+            f"Destination: {escalation.destination}\n"
+            f"Status: {escalation.status}\n"
+            f"Reason / Notes: {escalation.reason or 'Manual reviewer escalation'}\n\n"
+            f"(SIMULATED ESCALATION PROTOCOL - Hackathon Demo Queue)"
+        )
+        record = NotificationLog(
+            transaction_id=txn.id,
+            channel="CYBER_CRIME",
+            status="SIMULATED",
+            subject=subject,
+            message=message,
+            error=None
+        )
+        db.add(record)
+        db.commit()
+        log.warning("CYBER CRIME ESCALATION ALERT SIMULATED for %s:\n%s", txn.transaction_id, message)
+        return record
+

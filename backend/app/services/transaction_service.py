@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.engine import get_engine
-from app.models import FraudFlag, NotificationLog, Review, Transaction
+from app.models import Escalation, FraudFlag, NotificationLog, Review, Transaction
 from app.notifications.notification_service import NotificationService
 from app.rules.base_rule import RuleContext
 from app.schemas import Explanation, TransactionCreate
@@ -23,6 +23,10 @@ class DuplicateTransaction(Exception):
 
 
 class TransactionNotFound(Exception):
+    pass
+
+
+class IneligibleForEscalation(Exception):
     pass
 
 
@@ -62,24 +66,32 @@ def create_transaction(db: Session, payload: TransactionCreate) -> Transaction:
 
 
 def get_transaction(db: Session, transaction_id: str) -> Transaction:
-    txn = db.scalar(select(Transaction).options(selectinload(Transaction.flags), selectinload(Transaction.reviews))
-                    .where(Transaction.transaction_id == transaction_id))
+    txn = db.scalar(select(Transaction).options(
+        selectinload(Transaction.flags),
+        selectinload(Transaction.reviews),
+        selectinload(Transaction.escalations)
+    ).where(Transaction.transaction_id == transaction_id))
     if not txn:
         raise TransactionNotFound(transaction_id)
     return txn
 
 
-def list_transactions(db: Session, *, flagged_only=False, risk_level: Optional[str] = None,
-                      status: Optional[str] = None, rule: Optional[str] = None,
+def list_transactions(db: Session, *, flagged_only=False, escalated_only=False,
+                      risk_level: Optional[str] = None, status: Optional[str] = None,
+                      escalation_status: Optional[str] = None, rule: Optional[str] = None,
                       on_date: Optional[date] = None, search: Optional[str] = None,
                       limit: int = 100, offset: int = 0):
-    q = select(Transaction).options(selectinload(Transaction.flags))
+    q = select(Transaction).options(selectinload(Transaction.flags), selectinload(Transaction.escalations))
     if flagged_only:
         q = q.where(Transaction.risk_score >= settings.fraud_threshold)
+    if escalated_only:
+        q = q.where(Transaction.escalation_status != "NOT ESCALATED")
     if risk_level:
         q = q.where(Transaction.risk_level == risk_level.upper())
     if status:
         q = q.where(Transaction.status == status.upper())
+    if escalation_status:
+        q = q.where(Transaction.escalation_status == escalation_status.upper())
     if rule:
         q = q.where(Transaction.flags.any(FraudFlag.rule_name == rule))
     if on_date:
@@ -90,6 +102,61 @@ def list_transactions(db: Session, *, flagged_only=False, risk_level: Optional[s
         q = q.where(Transaction.transaction_id.ilike(like) | Transaction.customer_id.ilike(like))
     q = q.order_by(Transaction.timestamp.desc(), Transaction.id.desc()).limit(limit).offset(offset)
     return db.scalars(q).all()
+
+
+def escalate_transaction(db: Session, transaction_id: str, reviewer: str,
+                         reason: Optional[str] = None, destination: str = "CYBER_CRIME") -> Transaction:
+    txn = get_transaction(db, transaction_id)
+    if txn.risk_level not in ("HIGH", "CRITICAL"):
+        raise IneligibleForEscalation(f"Transaction {transaction_id} ({txn.risk_level}) is not eligible for escalation. Only HIGH and CRITICAL risk cases can be escalated.")
+
+    rules_summary = "; ".join([f"{f.rule_name} (+{f.risk_points}): {f.reason}" for f in txn.flags]) or "High risk score"
+
+    esc = Escalation(
+        transaction_id=txn.id,
+        customer_id=txn.customer_id,
+        risk_score=txn.risk_score,
+        risk_level=txn.risk_level,
+        triggered_rules=rules_summary,
+        reason=reason or f"Escalated to {destination} by {reviewer}",
+        destination=destination,
+        status="ESCALATED",
+        escalated_by=reviewer
+    )
+    txn.escalation_status = "ESCALATED"
+    db.add(esc)
+    db.commit()
+    db.refresh(txn)
+
+    NotificationService().send_escalation_alert(db, txn, esc)
+    return get_transaction(db, transaction_id)
+
+
+def list_escalations(db: Session, status: Optional[str] = None, limit: int = 100, offset: int = 0):
+    q = select(Escalation, Transaction.transaction_id.label("txn_ref"))\
+        .join(Transaction, Transaction.id == Escalation.transaction_id)
+    if status:
+        q = q.where(Escalation.status == status.upper())
+    q = q.order_by(Escalation.id.desc()).limit(limit).offset(offset)
+    rows = db.execute(q).all()
+    out = []
+    for esc, ref in rows:
+        esc.txn_ref = ref
+        out.append(esc)
+    return out
+
+
+def update_escalation_status(db: Session, transaction_id: str, new_status: str, notes: Optional[str] = None) -> Transaction:
+    txn = get_transaction(db, transaction_id)
+    if not txn.escalations:
+        raise TransactionNotFound(f"No escalation record for transaction {transaction_id}")
+    esc = txn.escalations[0]
+    esc.status = new_status.upper()
+    if notes:
+        esc.reason = f"{esc.reason} | Note: {notes}" if esc.reason else notes
+    txn.escalation_status = new_status.upper()
+    db.commit()
+    return get_transaction(db, transaction_id)
 
 
 def customer_history(db: Session, txn: Transaction, limit: int = 8):
@@ -117,6 +184,7 @@ def apply_review(db: Session, transaction_id: str, action: str, reviewer: str, c
 def dashboard_stats(db: Session) -> dict:
     total = db.scalar(select(func.count(Transaction.id))) or 0
     flagged = db.scalar(select(func.count(Transaction.id)).where(Transaction.risk_score >= settings.fraud_threshold)) or 0
+    escalated = db.scalar(select(func.count(Transaction.id)).where(Transaction.escalation_status != "NOT ESCALATED")) or 0
     by_level = {lvl: 0 for lvl in LEVELS}
     for lvl, n in db.execute(select(Transaction.risk_level, func.count()).group_by(Transaction.risk_level)):
         by_level[lvl] = n
@@ -135,6 +203,7 @@ def dashboard_stats(db: Session) -> dict:
 
     return {
         "total_transactions": total, "flagged_transactions": flagged,
+        "escalated_cases": escalated,
         "high_risk": by_level["HIGH"], "critical_risk": by_level["CRITICAL"],
         "cleared": by_status.get("CLEARED", 0), "reviewed": by_status.get("REVIEWED", 0),
         "pending_review": by_status.get("FLAGGED", 0),
@@ -148,3 +217,4 @@ def recent_notifications(db: Session, limit: int = 10):
                       .join(Transaction, Transaction.id == NotificationLog.transaction_id)
                       .order_by(NotificationLog.id.desc()).limit(limit)).all()
     return [(n, ref) for n, ref in rows]
+

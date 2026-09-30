@@ -50,6 +50,7 @@ class TransactionOut(BaseModel):
     status: str
     risk_score: int
     risk_level: str
+    escalation_status: str = "NOT ESCALATED"
     created_at: Optional[datetime] = None
     flags: list[FlagOut] = []
 
@@ -64,8 +65,37 @@ class Explanation(BaseModel):
     lines: list[str]
 
 
+class EscalationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    transaction_id: int
+    txn_ref: Optional[str] = None
+    customer_id: str
+    risk_score: int
+    risk_level: str
+    triggered_rules: str
+    reason: Optional[str] = None
+    destination: str
+    status: str
+    escalated_by: str
+    escalated_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class EscalationCreate(BaseModel):
+    reviewer: str = Field("analyst", min_length=1, max_length=80)
+    reason: Optional[str] = Field(None, max_length=1000)
+    destination: Optional[str] = Field("CYBER_CRIME", max_length=64)
+
+
+class EscalationStatusUpdate(BaseModel):
+    status: Literal["NOT ESCALATED", "ESCALATION PENDING", "ESCALATED", "UNDER INVESTIGATION", "RESOLVED"]
+    notes: Optional[str] = Field(None, max_length=1000)
+
+
 class TransactionDetail(TransactionOut):
     reviews: list[ReviewOut] = []
+    escalations: list[EscalationOut] = []
     explanation: Explanation
     customer_history: list[TransactionOut] = []
 

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api import dashboard, transactions
+from app.api import dashboard, escalations, transactions
 from app.config import get_settings
 from app.database import SessionLocal, init_db
 from app.engine import get_engine
@@ -34,3 +34,4 @@ def health():
 
 app.include_router(transactions.router)
 app.include_router(dashboard.router)
+app.include_router(escalations.router)

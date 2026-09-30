@@ -216,9 +216,47 @@ Credentials come from `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in your enviro
 
 **2:30–3:00, Alert and extensibility.** Show the High-risk alerts panel (simulated in demo, SNS/SES with `DEMO_MODE=false`). Close: "Adding a new rule is one file. Drop `device_rule.py` into `app/rules/` and it appears everywhere." Optionally do it live.
 
-## 16. Test checklist
+## 16. Cyber Crime / Fraud Escalation Workflow
+
+The application includes an end-to-end escalation system for high-risk and critical fraud cases:
+
+```
+Detect ─▶ Score ─▶ Explain ─▶ Prioritize ─▶ Human Reviewer ─▶ Escalate to Cyber Crime
+```
+
+### Escalation Features & Human-in-the-Loop Safeguard
+1. **Eligibility**: Transactions scoring **HIGH** (60–79) or **CRITICAL** (80–100) are automatically identified and made eligible for escalation.
+2. **Reviewer Decision**: Escalation is **never fully automated**. A human reviewer inspects the explainable rule breakdown, customer transaction history, and risk score before explicitly clicking **"Escalate to Cyber Crime"**.
+3. **Escalation Data Record**:
+   - `transaction_id`, `customer_id`, `amount`, `location`, `timestamp`
+   - `risk_score` & `risk_level`
+   - `triggered_rules` breakdown & explanation
+   - `escalated_by` (reviewer name) & `escalated_at` timestamp
+   - `status`: `NOT ESCALATED` | `ESCALATION PENDING` | `ESCALATED` | `UNDER INVESTIGATION` | `RESOLVED`
+4. **Dashboard Alerts & Filtering**:
+   - Prominent 🚨 **Escalated Fraud Alerts** panel on the reviewer dashboard.
+   - **Escalated Cases** KPI card in the summary header.
+   - Dedicated **Escalated cases** filter tab for quick triage.
+   - **Escalation History** log embedded in the transaction detail modal.
+
+### Hackathon Prototype vs. Production Integration
+> [!NOTE]
+> For the hackathon prototype, the application **does NOT connect to any official government Cyber Crime reporting API or external portal**.
+> 
+> When the reviewer clicks **"Escalate to Cyber Crime"**, the system executes a **simulated prototype escalation protocol**:
+> - Logs a simulated dispatch (`CYBER_CRIME` channel) in `notification_logs`.
+> - Updates the database record to `ESCALATED`.
+> - Displays: *"Case successfully escalated to Cyber Crime Investigation Queue."*
+> 
+> **Production Integration Path**: The clean notification service abstraction (`NotificationService`) is structured so that bank fraud infrastructure teams can plug in:
+> - Production Email / SMS alerts to internal fraud investigation teams.
+> - Webhooks or APIs connecting to official bank/government cyber-crime reporting channels.
+> - AWS SNS/SQS messaging queues for automated law-enforcement ticketing systems.
+
+## 17. Test checklist
 1. **Velocity:** Generate demo, filter Rule = Transaction Velocity. Expect the 6th/7th burst transactions, reason "7 transactions within 5 minutes".
 2. **Amount:** Filter Rule = Unusual Amount. Expect ₹90,000 with a ratio against the ₹800 average.
 3. **Geography:** Filter Rule = Impossible Geographical Location. Expect the Chennai→Mumbai case with distance and speed.
 4. **Reviewer actions:** open a flagged row, add a comment, click Mark as reviewed or Clear. Refresh the page; status persists. Confirm with `SELECT * FROM reviews;`.
 5. **Notification:** open the CRITICAL row. The alerts panel lists it; backend logs show `DEMO NOTIFICATION`. With `DEMO_MODE=false`, check your inbox.
+6. **Escalation:** Open transaction `C1005` (score 100/100 CRITICAL). Verify 🚨 CRITICAL FRAUD ALERT box and checkmarks. Click **"Escalate to Cyber Crime"**. Confirm toast *"Case successfully escalated to Cyber Crime Investigation Queue."*, status changes to `ESCALATED`, KPI updates, and escalation history is recorded.

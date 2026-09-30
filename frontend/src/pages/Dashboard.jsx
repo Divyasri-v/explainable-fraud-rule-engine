@@ -35,7 +35,14 @@ export default function Dashboard() {
     try {
       const params = { ...filters, search: query };
       const [s, list, n] = await Promise.all([
-        api.stats(), view === "flagged" ? api.flagged(params) : api.transactions(params), api.notifications()]);
+        api.stats(),
+        view === "flagged"
+          ? api.flagged(params)
+          : view === "escalated"
+          ? api.transactions({ ...params, escalated_only: true })
+          : api.transactions(params),
+        api.notifications(),
+      ]);
       setStats(s); setRows(list); setAlerts(n); setError("");
     } catch (e) { setError(e.message); } finally { setLoading(false); }
   }, [filters, query, view]);

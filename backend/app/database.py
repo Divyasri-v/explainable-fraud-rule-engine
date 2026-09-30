@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.config import get_settings
 
@@ -17,6 +17,9 @@ def get_db():
 
 
 def init_db():
-    """Create all tables (idempotent)."""
+    """Create all tables (idempotent) and apply migrations."""
     from app import models  # noqa: F401  (registers models on Base)
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS escalation_status VARCHAR(32) NOT NULL DEFAULT 'NOT ESCALATED'"))
+

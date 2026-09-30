@@ -18,10 +18,12 @@ class Transaction(Base):
     status = Column(String(16), nullable=False, default="NORMAL", index=True)  # NORMAL | FLAGGED | REVIEWED | CLEARED
     risk_score = Column(Integer, nullable=False, default=0)
     risk_level = Column(String(16), nullable=False, default="LOW", index=True)
+    escalation_status = Column(String(32), nullable=False, default="NOT ESCALATED", index=True)  # NOT ESCALATED | ESCALATION PENDING | ESCALATED | UNDER INVESTIGATION | RESOLVED
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     flags = relationship("FraudFlag", back_populates="transaction", cascade="all, delete-orphan", order_by="FraudFlag.id")
     reviews = relationship("Review", back_populates="transaction", cascade="all, delete-orphan", order_by="Review.id")
+    escalations = relationship("Escalation", back_populates="transaction", cascade="all, delete-orphan", order_by="Escalation.id.desc()")
 
 
 class FraudFlag(Base):
@@ -50,17 +52,37 @@ class Review(Base):
     transaction = relationship("Transaction", back_populates="reviews")
 
 
+class Escalation(Base):
+    __tablename__ = "escalations"
+
+    id = Column(Integer, primary_key=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id", ondelete="CASCADE"), index=True, nullable=False)
+    customer_id = Column(String(32), index=True, nullable=False)
+    risk_score = Column(Integer, nullable=False)
+    risk_level = Column(String(16), nullable=False)
+    triggered_rules = Column(Text, nullable=False)
+    reason = Column(Text)
+    destination = Column(String(64), nullable=False, default="CYBER_CRIME")
+    status = Column(String(32), nullable=False, default="ESCALATED", index=True)
+    escalated_by = Column(String(80), nullable=False, default="analyst")
+    escalated_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    transaction = relationship("Transaction", back_populates="escalations")
+
+
 class NotificationLog(Base):
     """Audit trail of high-risk alerts (real or simulated)."""
     __tablename__ = "notification_logs"
 
     id = Column(Integer, primary_key=True)
     transaction_id = Column(Integer, ForeignKey("transactions.id", ondelete="CASCADE"), index=True, nullable=False)
-    channel = Column(String(16), nullable=False)   # DEMO | SNS | SES
-    status = Column(String(16), nullable=False)    # SIMULATED | SENT | FAILED
+    channel = Column(String(32), nullable=False)   # DEMO | SNS | SES | CYBER_CRIME
+    status = Column(String(16), nullable=False)    # SIMULATED | SENT | FAILED | ESCALATED
     subject = Column(String(200))
     message = Column(Text)
     error = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     transaction = relationship("Transaction")
+

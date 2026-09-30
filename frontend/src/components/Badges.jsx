@@ -1,4 +1,4 @@
-import { RISK_LEVELS, STATUS_LABEL } from "../services/format.js";
+import { ESCALATION_LABEL, RISK_LEVELS, STATUS_LABEL } from "../services/format.js";
 
 export function RiskBadge({ level }) {
   return <span className={`badge risk-${level.toLowerCase()}`}>{level}</span>;
@@ -6,6 +6,12 @@ export function RiskBadge({ level }) {
 
 export function StatusBadge({ status }) {
   return <span className={`badge status-${status.toLowerCase()}`}>{STATUS_LABEL[status] || status}</span>;
+}
+
+export function EscalationBadge({ status }) {
+  if (!status || status === "NOT ESCALATED") return null;
+  const cls = status.toLowerCase().replace(/ /g, "-");
+  return <span className={`badge escalation-${cls}`}>🚨 {ESCALATION_LABEL[status] || status}</span>;
 }
 
 /* Four-segment meter: filled segments match the risk level, so severity reads without colour alone. */
